@@ -17,6 +17,10 @@ namespace ThreadLocal {
 class Instance;
 }
 
+namespace Upstream {
+class ClusterManager;
+}
+
 namespace Stats {
 
 /**
@@ -99,6 +103,11 @@ typedef std::shared_ptr<Timer> TimerSharedPtr;
 class Sink {
 public:
   virtual ~Sink() {}
+
+  /**
+   * fixfix
+   */
+  virtual void initialize(Upstream::ClusterManager& cluster_manager) PURE;
 
   /**
    * Flush a counter delta.

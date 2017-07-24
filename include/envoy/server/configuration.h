@@ -63,23 +63,6 @@ public:
   virtual RateLimit::ClientFactory& rateLimitClientFactory() PURE;
 
   /**
-   * @return Optional<std::string> the optional local/remote TCP statsd cluster to write to.
-   *         This cluster must be defined via the cluster manager configuration.
-   */
-  virtual Optional<std::string> statsdTcpClusterName() PURE;
-
-  // TODO(hennna): DEPRECATED - will be removed in 1.4.0.
-  /**
-   * @return Optional<uint32_t> the optional local UDP statsd port to write to.
-   */
-  virtual Optional<uint32_t> statsdUdpPort() PURE;
-
-  /**
-   * @return Optional<std::string> the optional UDP statsd address to write to.
-   */
-  virtual Optional<std::string> statsdUdpIpAddress() PURE;
-
-  /**
    * @return std::chrono::milliseconds the time interval between flushing to configured stat sinks.
    *         The server latches counters.
    */
@@ -154,6 +137,23 @@ public:
    * @return Runtime* the local disk runtime configuration or nullptr if there is no configuration.
    */
   virtual Runtime* runtime() PURE;
+
+  /**
+   * @return Optional<std::string> the optional local/remote TCP statsd cluster to write to.
+   *         This cluster must be defined via the cluster manager configuration.
+   */
+  virtual Optional<std::string> statsdTcpClusterName() PURE;
+
+  // TODO(hennna): DEPRECATED - will be removed in 1.4.0.
+  /**
+   * @return Optional<uint32_t> the optional local UDP statsd port to write to.
+   */
+  virtual Optional<uint32_t> statsdUdpPort() PURE;
+
+  /**
+   * @return Optional<std::string> the optional UDP statsd address to write to.
+   */
+  virtual Optional<std::string> statsdUdpIpAddress() PURE;
 };
 
 } // namespace Configuration

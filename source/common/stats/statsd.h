@@ -25,7 +25,7 @@ public:
   void writeCounter(const std::string& name, uint64_t increment);
   void writeGauge(const std::string& name, uint64_t value);
   void writeTimer(const std::string& name, const std::chrono::milliseconds& ms);
-  void shutdown() override;
+
   // Called in unit test to validate address.
   int getFdForTests() const { return fd_; };
 
@@ -33,7 +33,6 @@ private:
   void send(const std::string& message);
 
   int fd_;
-  bool shutdown_{};
 };
 
 /**
@@ -41,9 +40,10 @@ private:
  */
 class UdpStatsdSink : public Sink {
 public:
-  UdpStatsdSink(ThreadLocal::Instance& tls, Network::Address::InstanceConstSharedPtr address);
+  UdpStatsdSink(ThreadLocal::SlotAllocator& tls, Network::Address::InstanceConstSharedPtr address);
 
   // Stats::Sink
+  void initialize(Upstream::ClusterManager&) override {}
   void flushCounter(const std::string& name, uint64_t delta) override;
   void flushGauge(const std::string& name, uint64_t value) override;
   void onHistogramComplete(const std::string& name, uint64_t value) override {
@@ -52,11 +52,10 @@ public:
   }
   void onTimespanComplete(const std::string& name, std::chrono::milliseconds ms) override;
   // Called in unit test to validate writer construction and address.
-  int getFdForTests() { return tls_.getTyped<Writer>(tls_slot_).getFdForTests(); }
+  int getFdForTests() { return tls_->getTyped<Writer>().getFdForTests(); }
 
 private:
-  ThreadLocal::Instance& tls_;
-  const uint32_t tls_slot_;
+  ThreadLocal::SlotPtr tls_;
   Network::Address::InstanceConstSharedPtr server_address_;
 };
 
@@ -66,16 +65,17 @@ private:
 class TcpStatsdSink : public Sink {
 public:
   TcpStatsdSink(const LocalInfo::LocalInfo& local_info, const std::string& cluster_name,
-                ThreadLocal::Instance& tls, Upstream::ClusterManager& cluster_manager,
-                Stats::Scope& scope);
+                ThreadLocal::SlotAllocator& tls, Stats::Scope& scope);
 
   // Stats::Sink
+  void initialize(Upstream::ClusterManager& cluster_manager) override;
+
   void flushCounter(const std::string& name, uint64_t delta) override {
-    tls_.getTyped<TlsSink>(tls_slot_).flushCounter(name, delta);
+    tls_->getTyped<TlsSink>().flushCounter(name, delta);
   }
 
   void flushGauge(const std::string& name, uint64_t value) override {
-    tls_.getTyped<TlsSink>(tls_slot_).flushGauge(name, value);
+    tls_->getTyped<TlsSink>().flushGauge(name, value);
   }
 
   void onHistogramComplete(const std::string& name, uint64_t value) override {
@@ -84,7 +84,7 @@ public:
   }
 
   void onTimespanComplete(const std::string& name, std::chrono::milliseconds ms) override {
-    tls_.getTyped<TlsSink>(tls_slot_).onTimespanComplete(name, ms);
+    tls_->getTyped<TlsSink>().onTimespanComplete(name, ms);
   }
 
 private:
@@ -97,9 +97,6 @@ private:
     void onTimespanComplete(const std::string& name, std::chrono::milliseconds ms);
     void write(const std::string& stat);
 
-    // ThreadLocal::ThreadLocalObject
-    void shutdown() override;
-
     // Network::ConnectionCallbacks
     void onEvent(uint32_t events) override;
     void onAboveWriteBufferHighWatermark() override {}
@@ -108,16 +105,16 @@ private:
     TcpStatsdSink& parent_;
     Event::Dispatcher& dispatcher_;
     Network::ClientConnectionPtr connection_;
-    bool shutdown_{};
   };
 
   // Somewhat arbitrary 16MiB limit for buffered stats.
   static constexpr uint32_t MaxBufferedStatsBytes = (1024 * 1024 * 16);
 
+  const LocalInfo::LocalInfo& local_info_;
+  const std::string cluster_name_;
   Upstream::ClusterInfoConstSharedPtr cluster_info_;
-  ThreadLocal::Instance& tls_;
-  uint32_t tls_slot_;
-  Upstream::ClusterManager& cluster_manager_;
+  ThreadLocal::SlotPtr tls_;
+  Upstream::ClusterManager* cluster_manager_{};
   Stats::Counter& cx_overflow_stat_;
 };
 

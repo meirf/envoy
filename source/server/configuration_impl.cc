@@ -57,19 +57,6 @@ void MainImpl::initialize(const Json::Object& json, Instance& server,
                          "are mutually exclusive.");
   }
 
-  // TODO(hennna): DEPRECATED - statsd_local_udp_port will be removed in 1.4.0.
-  if (json.hasObject("statsd_local_udp_port")) {
-    statsd_udp_port_.value(json.getInteger("statsd_local_udp_port"));
-  }
-
-  if (json.hasObject("statsd_udp_ip_address")) {
-    statsd_udp_ip_address_.value(json.getString("statsd_udp_ip_address"));
-  }
-
-  if (json.hasObject("statsd_tcp_cluster_name")) {
-    statsd_tcp_cluster_name_.value(json.getString("statsd_tcp_cluster_name"));
-  }
-
   stats_flush_interval_ =
       std::chrono::milliseconds(json.getInteger("stats_flush_interval_ms", 5000));
 
@@ -150,6 +137,19 @@ InitialImpl::InitialImpl(const Json::Object& json) {
     runtime_->subdirectory_ = json.getObject("runtime")->getString("subdirectory");
     runtime_->override_subdirectory_ =
         json.getObject("runtime")->getString("override_subdirectory", "");
+  }
+
+  // TODO(hennna): DEPRECATED - statsd_local_udp_port will be removed in 1.4.0.
+  if (json.hasObject("statsd_local_udp_port")) {
+    statsd_udp_port_.value(json.getInteger("statsd_local_udp_port"));
+  }
+
+  if (json.hasObject("statsd_udp_ip_address")) {
+    statsd_udp_ip_address_.value(json.getString("statsd_udp_ip_address"));
+  }
+
+  if (json.hasObject("statsd_tcp_cluster_name")) {
+    statsd_tcp_cluster_name_.value(json.getString("statsd_tcp_cluster_name"));
   }
 }
 

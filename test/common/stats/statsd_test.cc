@@ -14,12 +14,12 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
-namespace Envoy {
 using testing::InSequence;
 using testing::NiceMock;
 using testing::Return;
 using testing::_;
 
+namespace Envoy {
 namespace Stats {
 namespace Statsd {
 
@@ -27,8 +27,9 @@ class TcpStatsdSinkTest : public testing::Test {
 public:
   TcpStatsdSinkTest() {
     sink_.reset(
-        new TcpStatsdSink(local_info_, "fake_cluster", tls_, cluster_manager_,
+        new TcpStatsdSink(local_info_, "fake_cluster", tls_,
                           cluster_manager_.thread_local_cluster_.cluster_.info_->stats_store_));
+    sink_->initialize(cluster_manager_);
   }
 
   void expectCreateConnection() {

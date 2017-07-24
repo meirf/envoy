@@ -27,20 +27,19 @@
 #include "server/guarddog_impl.h"
 #include "server/test_hooks.h"
 
-#include "spdlog/spdlog.h"
-
 namespace Envoy {
 namespace Server {
 
 InstanceImpl::InstanceImpl(Options& options, TestHooks& hooks, HotRestart& restarter,
                            Stats::StoreRoot& store, Thread::BasicLockable& access_log_lock,
                            ComponentFactory& component_factory,
-                           const LocalInfo::LocalInfo& local_info)
+                           const LocalInfo::LocalInfo& local_info, ThreadLocal::Instance& tls)
     : options_(options), restarter_(restarter), start_time_(time(nullptr)),
       original_start_time_(start_time_),
       stats_store_(store), server_stats_{ALL_SERVER_STATS(
                                POOL_GAUGE_PREFIX(stats_store_, "server."))},
-      api_(new Api::Impl(options.fileFlushIntervalMsec())), dispatcher_(api_->allocateDispatcher()),
+      thread_local_(tls), api_(new Api::Impl(options.fileFlushIntervalMsec())),
+      dispatcher_(api_->allocateDispatcher()),
       handler_(new ConnectionHandlerImpl(log(), *dispatcher_)), listener_component_factory_(*this),
       worker_factory_(thread_local_, *api_, hooks),
       dns_resolver_(dispatcher_->createDnsResolver({})), local_info_(local_info),
@@ -155,6 +154,9 @@ void InstanceImpl::initialize(Options& options, ComponentFactory& component_fact
   // whether it runs on the main thread or on workers can still use TLS.
   thread_local_.registerThread(*dispatcher_, true);
 
+  // fixfix
+  initializeStatSinks(initial_config);
+
   // We can now initialize stats for threading.
   stats_store_.initializeThreading(*dispatcher_, thread_local_);
 
@@ -175,6 +177,11 @@ void InstanceImpl::initialize(Options& options, ComponentFactory& component_fact
   config_.reset(main_config);
   main_config->initialize(*config_json, *this, *cluster_manager_factory_);
 
+  // fixfix initialize stat sinks.
+  for (const auto& sink : stat_sinks_) {
+    sink->initialize(clusterManager());
+  }
+
   // Setup signals.
   sigterm_ = dispatcher_->listenForSignal(SIGTERM, [this]() -> void {
     ENVOY_LOG(warn, "caught SIGTERM");
@@ -190,8 +197,6 @@ void InstanceImpl::initialize(Options& options, ComponentFactory& component_fact
   sig_hup_ = dispatcher_->listenForSignal(SIGHUP, []() -> void {
     ENVOY_LOG(warn, "caught and eating SIGHUP. See documentation for how to hot restart.");
   });
-
-  initializeStatSinks();
 
   // Some of the stat sinks may need dispatcher support so don't flush until the main loop starts.
   // Just setup the timer.
@@ -231,29 +236,28 @@ Runtime::LoaderPtr InstanceUtil::createRuntime(Instance& server,
   }
 }
 
-void InstanceImpl::initializeStatSinks() {
-  if (config_->statsdUdpIpAddress().valid()) {
-    ENVOY_LOG(info, "statsd UDP ip address: {}", config_->statsdUdpIpAddress().value());
+void InstanceImpl::initializeStatSinks(Configuration::Initial& config) {
+  if (config.statsdUdpIpAddress().valid()) {
+    ENVOY_LOG(info, "statsd UDP ip address: {}", config.statsdUdpIpAddress().value());
     stat_sinks_.emplace_back(new Stats::Statsd::UdpStatsdSink(
         thread_local_,
-        Network::Utility::parseInternetAddressAndPort(config_->statsdUdpIpAddress().value())));
+        Network::Utility::parseInternetAddressAndPort(config.statsdUdpIpAddress().value())));
     stats_store_.addSink(*stat_sinks_.back());
-  } else if (config_->statsdUdpPort().valid()) {
+  } else if (config.statsdUdpPort().valid()) {
     // TODO(hennna): DEPRECATED - statsdUdpPort will be removed in 1.4.0.
     ENVOY_LOG(warn, "statsd_local_udp_port has been DEPRECATED and will be removed in 1.4.0. "
                     "Consider setting statsd_udp_ip_address instead.");
-    ENVOY_LOG(info, "statsd UDP port: {}", config_->statsdUdpPort().value());
+    ENVOY_LOG(info, "statsd UDP port: {}", config.statsdUdpPort().value());
     Network::Address::InstanceConstSharedPtr address(
-        new Network::Address::Ipv4Instance(config_->statsdUdpPort().value()));
+        new Network::Address::Ipv4Instance(config.statsdUdpPort().value()));
     stat_sinks_.emplace_back(new Stats::Statsd::UdpStatsdSink(thread_local_, address));
     stats_store_.addSink(*stat_sinks_.back());
   }
 
-  if (config_->statsdTcpClusterName().valid()) {
-    ENVOY_LOG(info, "statsd TCP cluster: {}", config_->statsdTcpClusterName().value());
-    stat_sinks_.emplace_back(
-        new Stats::Statsd::TcpStatsdSink(local_info_, config_->statsdTcpClusterName().value(),
-                                         thread_local_, config_->clusterManager(), stats_store_));
+  if (config.statsdTcpClusterName().valid()) {
+    ENVOY_LOG(info, "statsd TCP cluster: {}", config.statsdTcpClusterName().value());
+    stat_sinks_.emplace_back(new Stats::Statsd::TcpStatsdSink(
+        local_info_, config.statsdTcpClusterName().value(), thread_local_, stats_store_));
     stats_store_.addSink(*stat_sinks_.back());
   }
 }
@@ -289,6 +293,9 @@ void InstanceImpl::run() {
   ENVOY_LOG(warn, "main dispatch loop exited");
   guard_dog_->stopWatching(watchdog);
   watchdog.reset();
+
+  // Before starting to shutdown anything else, stop slot destruction updates.
+  thread_local_.shutdownGlobalThreading();
 
   // Before the workers start exiting we should disable stat threading.
   stats_store_.shutdownThreading();
